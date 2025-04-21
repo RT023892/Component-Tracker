@@ -6,6 +6,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'supersecret'
 
+# 初始化資料庫
 conn = sqlite3.connect('components.db')
 c = conn.cursor()
 c.execute("""CREATE TABLE IF NOT EXISTS components (
@@ -43,7 +44,7 @@ html_template = """
         吊裝日期: <input type='date' name='install_date' value='{{ today }}'><br>
 
         構件編號: <input type='text' name='component_id' value='{{ component_id | default('') }}'><br>
-        流水號（可批量，範例: 152-155,172-175）: <input type='text' name='serial_number'><br>
+        流水號（可批量，範例: 152-155,172-175）: <input type='text' name='serial_number' value='{{ serial_number | default('') }}'><br>
 
         吊裝位置：<br>
         Line線(英文)：<select name='x1'>{{ options_alpha|safe }}</select>
@@ -106,7 +107,15 @@ def parse_serial_ranges(text):
 @app.route('/')
 def index():
     today = datetime.today().strftime('%Y-%m-%d')
-    last = session.get('last_input', {})
+    session_defaults = {
+        'component_id': '',
+        'serial_number': '',
+        'x1': '',
+        'x2': '',
+        'y1': '',
+        'y2': ''
+    }
+    last = session.get('last_input', session_defaults)
     return render_template_string(html_template,
                                   today=today,
                                   options_alpha=generate_alpha_options(),
@@ -120,9 +129,8 @@ def add_component():
     action = request.form['action']
     if action == '上一筆':
         session['last_input'] = {
-            'project_name': request.form['project_name'],
             'component_id': request.form['component_id'],
-            'install_date': request.form['install_date'],
+            'serial_number': request.form['serial_number'],
             'x1': request.form['x1'],
             'x2': request.form['x2'],
             'y1': request.form['y1'],
@@ -131,14 +139,15 @@ def add_component():
         return redirect('/')
 
     serials = parse_serial_ranges(request.form['serial_number'])
+
+    # 按下「新增」後清空欄位
     session['last_input'] = {
-        'project_name': request.form['project_name'],
-        'component_id': request.form['component_id'],
-        'install_date': request.form['install_date'],
-        'x1': request.form['x1'],
-        'x2': request.form['x2'],
-        'y1': request.form['y1'],
-        'y2': request.form['y2']
+        'component_id': '',
+        'serial_number': '',
+        'x1': '',
+        'x2': '',
+        'y1': '',
+        'y2': ''
     }
 
     conn = sqlite3.connect('components.db')
