@@ -6,7 +6,6 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'supersecret'
 
-# 初始化資料庫
 conn = sqlite3.connect('components.db')
 c = conn.cursor()
 c.execute("""CREATE TABLE IF NOT EXISTS components (
@@ -47,10 +46,10 @@ html_template = """
         流水號（可批量，範例: 152-155,172-175）: <input type='text' name='serial_number' value='{{ serial_number | default('') }}'><br>
 
         吊裝位置：<br>
-        Line線(英文)：<select name='x1'>{{ options_alpha|safe }}</select>
-        到 <select name='x2'>{{ options_alpha|safe }}</select><br>
-        Line線(數字)：<select name='y1'>{{ options_number|safe }}</select>
-        到 <select name='y2'>{{ options_number|safe }}</select><br>
+        Line線(英文)：<select name='x1'>{{ options_alpha_x1|safe }}</select>
+        到 <select name='x2'>{{ options_alpha_x2|safe }}</select><br>
+        Line線(數字)：<select name='y1'>{{ options_number_y1|safe }}</select>
+        到 <select name='y2'>{{ options_number_y2|safe }}</select><br>
 
         <input type='submit' name='action' value='新增'>
         <input type='submit' name='action' value='上一筆'>
@@ -77,21 +76,24 @@ html_template = """
 </html>
 """
 
-def generate_alpha_options():
+def make_option(value, selected):
+    return f"<option value='{value}'{' selected' if value == selected else ''}>{value}</option>"
+
+def generate_alpha_options(selected_value=None):
     values = [chr(i) for i in range(ord('A'), ord('Z') + 1)]
     full = []
     for val in values:
         full.append(val)
         full.append(val + ".5")
-    return "".join([f"<option value='{v}'>{v}</option>" for v in full])
+    return "".join([make_option(v, selected_value) for v in full])
 
-def generate_number_options():
+def generate_number_options(selected_value=None):
     values = [str(i) for i in range(1, 19)]
     full = []
     for v in values:
         full.append(v)
         full.append(v + ".5")
-    return "".join([f"<option value='{v}'>{v}</option>" for v in full])
+    return "".join([make_option(v, selected_value) for v in full])
 
 def parse_serial_ranges(text):
     ranges = []
@@ -107,22 +109,22 @@ def parse_serial_ranges(text):
 @app.route('/')
 def index():
     today = datetime.today().strftime('%Y-%m-%d')
-    session_defaults = {
-        'component_id': '',
-        'serial_number': '',
-        'x1': '',
-        'x2': '',
-        'y1': '',
-        'y2': ''
-    }
-    last = session.get('last_input', session_defaults)
-    return render_template_string(html_template,
-                                  today=today,
-                                  options_alpha=generate_alpha_options(),
-                                  options_number=generate_number_options(),
-                                  result=None,
-                                  searched=False,
-                                  **last)
+    s = session.get('last_input', {
+        'component_id': '', 'serial_number': '',
+        'x1': '', 'x2': '', 'y1': '', 'y2': ''
+    })
+    return render_template_string(
+        html_template,
+        today=today,
+        component_id=s.get('component_id', ''),
+        serial_number=s.get('serial_number', ''),
+        options_alpha_x1=generate_alpha_options(s.get('x1')),
+        options_alpha_x2=generate_alpha_options(s.get('x2')),
+        options_number_y1=generate_number_options(s.get('y1')),
+        options_number_y2=generate_number_options(s.get('y2')),
+        result=None,
+        searched=False
+    )
 
 @app.route('/add', methods=['POST'])
 def add_component():
@@ -139,8 +141,6 @@ def add_component():
         return redirect('/')
 
     serials = parse_serial_ranges(request.form['serial_number'])
-
-    # 按下「新增」後清空欄位
     session['last_input'] = {
         'component_id': '',
         'serial_number': '',
@@ -177,11 +177,18 @@ def search():
     c.execute('SELECT project_name, component_id, serial_number, install_date, x1, x2, y1, y2 FROM components WHERE component_id=? AND serial_number=?', (component_id, serial_number))
     result = c.fetchone()
     conn.close()
-    return render_template_string(html_template,
-                                  today=datetime.today().strftime('%Y-%m-%d'),
-                                  options_alpha=generate_alpha_options(),
-                                  options_number=generate_number_options(),
-                                  result=result, searched=True)
+    return render_template_string(
+        html_template,
+        today=datetime.today().strftime('%Y-%m-%d'),
+        component_id='',
+        serial_number='',
+        options_alpha_x1=generate_alpha_options(),
+        options_alpha_x2=generate_alpha_options(),
+        options_number_y1=generate_number_options(),
+        options_number_y2=generate_number_options(),
+        result=result,
+        searched=True
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
